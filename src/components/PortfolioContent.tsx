@@ -170,32 +170,6 @@ export function PortfolioContent({ displayText }: { displayText: string }) {
         </p>
       </motion.section>
 
-      <motion.section id="education" className="section-card glass education-card" initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.2 }} transition={{ duration: 0.5 }}>
-        <div className="section-heading">
-          <h2>Education</h2>
-          <span className="muted">Academic foundation</span>
-        </div>
-        <div className="education-content">
-          <div className="education-header">
-            <div className="education-icon">
-              <FaGraduationCap />
-            </div>
-            <div>
-              <h3>Bachelor of Engineering (B.E.) – Computer Science and Engineering</h3>
-              <p className="muted" style={{ margin: '4px 0 0' }}>Dhanalakshmi Srinivasan College of Engineering and Technology</p>
-            </div>
-          </div>
-          <div className="education-meta">
-            <p><span>Location:</span> East Coast Road, Mamallapuram, Chennai – 603104, Tamil Nadu</p>
-            <p><span>Duration:</span> 2023 – 2027</p>
-          </div>
-          <ul className="education-highlights">
-            <li>Pursuing a Bachelor of Engineering in Computer Science and Engineering.</li>
-            <li>Building practical skills in UI/UX Design, Frontend Development, Python, and Cybersecurity.</li>
-            <li>Actively participating in academic projects, hackathons, and product development initiatives.</li>
-          </ul>
-        </div>
-      </motion.section>
 
       <motion.section id="skills" className="section-card glass" initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.2 }} transition={{ duration: 0.5 }}>
         <div className="section-heading">
