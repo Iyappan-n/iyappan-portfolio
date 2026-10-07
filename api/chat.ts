@@ -5,9 +5,10 @@ const MAX_MESSAGE_LENGTH = 2000;
 const MAX_HISTORY_TURNS = 12;
 const MAX_HISTORY_MESSAGE_LENGTH = 2000;
 const MAX_GENERATION_ATTEMPTS = 3;
-const INITIAL_RETRY_DELAY_MS = 300;
+const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 5000;
 
-const SYSTEM_INSTRUCTION = `You are IYAPPAN's portfolio assistant. Help visitors with questions about IYAPPAN, his skills, projects, experience, and portfolio, as well as general AI and technical questions. IYAPPAN is a Computer Science and Engineering student interested in UI/UX design, frontend development, Python, cybersecurity, and product development. Use the portfolio's About, Skills, Projects, Resume, and Contact sections as references. Do not invent specific project details, employment history, achievements, or personal information that was not provided; be transparent when the portfolio does not contain an answer. Answer general technical questions helpfully and concisely.`;
+const SYSTEM_INSTRUCTION = `You are a helpful general-purpose AI assistant and IYAPPAN's portfolio assistant. Answer general knowledge, AI, coding, technical, educational, and everyday questions directly and normally; do not redirect unrelated general questions to the portfolio or refuse them because they are not about IYAPPAN. For questions specifically about IYAPPAN, use this portfolio context: he is a Computer Science and Engineering student interested in UI/UX design, frontend development, Python, cybersecurity, and product development. Use the portfolio's About, Skills, Projects, Experience, Resume, and Contact information when relevant. Do not invent specific project details, employment history, achievements, or personal information that is not provided; be transparent when portfolio details are unavailable. Keep answers clear, useful, and concise.`;
 
 type ChatHistoryTurn = {
   role: "user" | "model";
@@ -40,8 +41,21 @@ function getSafeHistory(value: unknown): ChatHistoryTurn[] {
 }
 
 function getErrorStatus(error: unknown): number | undefined {
-  if (!isRecord(error) || typeof error.status !== "number") return undefined;
-  return error.status;
+  if (!isRecord(error)) return undefined;
+
+  const status = error.status;
+  if (typeof status === "number") return status;
+  if (typeof status === "string" && /^\d{3}$/.test(status)) return Number(status);
+
+  if (isRecord(error.response)) {
+    const responseStatus = error.response.status;
+    if (typeof responseStatus === "number") return responseStatus;
+    if (typeof responseStatus === "string" && /^\d{3}$/.test(responseStatus)) {
+      return Number(responseStatus);
+    }
+  }
+
+  return undefined;
 }
 
 function isRetryableError(error: unknown): boolean {
@@ -51,6 +65,31 @@ function isRetryableError(error: unknown): boolean {
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function getRetryAfterMs(error: unknown): number | undefined {
+  if (!isRecord(error)) return undefined;
+
+  const response = isRecord(error.response) ? error.response : undefined;
+  const headers = response?.headers ?? error.headers;
+  if (!isRecord(headers) || typeof headers.get !== "function") return undefined;
+
+  let retryAfter: unknown;
+  try {
+    retryAfter = (headers.get as (name: string) => unknown).call(headers, "retry-after");
+  } catch {
+    return undefined;
+  }
+
+  if (typeof retryAfter !== "string") return undefined;
+
+  const seconds = Number(retryAfter);
+  const delay = Number.isFinite(seconds)
+    ? seconds * 1000
+    : Date.parse(retryAfter) - Date.now();
+
+  if (!Number.isFinite(delay) || delay <= 0) return undefined;
+  return Math.min(delay, MAX_RETRY_DELAY_MS);
 }
 
 export default async function handler(
@@ -111,7 +150,15 @@ export default async function handler(
           throw error;
         }
 
-        const delay = INITIAL_RETRY_DELAY_MS * 2 ** (attempt - 1);
+        const exponentialDelay = Math.min(
+          INITIAL_RETRY_DELAY_MS * 2 ** (attempt - 1),
+          MAX_RETRY_DELAY_MS,
+        );
+        const jitteredDelay = exponentialDelay * (0.8 + Math.random() * 0.4);
+        const delay = Math.min(
+          Math.max(jitteredDelay, getRetryAfterMs(error) ?? 0),
+          MAX_RETRY_DELAY_MS,
+        );
         await wait(delay);
       }
     }
@@ -153,7 +200,7 @@ export default async function handler(
     }
 
     if (status !== undefined && status >= 500) {
-      return response.status(502).json({
+      return response.status(503).json({
         error: "The AI chat provider is temporarily unavailable. Please try again shortly.",
       });
     }

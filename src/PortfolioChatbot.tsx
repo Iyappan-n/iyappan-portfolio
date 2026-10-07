@@ -1,5 +1,43 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./PortfolioChatbot.css";
+
+interface SpeechRecognitionAlternativeLike {
+  readonly transcript: string;
+}
+
+interface SpeechRecognitionResultLike {
+  readonly isFinal: boolean;
+  readonly [index: number]: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionEventLike extends Event {
+  readonly resultIndex: number;
+  readonly results: ArrayLike<SpeechRecognitionResultLike>;
+}
+
+interface SpeechRecognitionErrorEventLike extends Event {
+  readonly error: string;
+}
+
+interface SpeechRecognitionInstance {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface SpeechRecognitionConstructor {
+  new (): SpeechRecognitionInstance;
+}
+
+type SpeechRecognitionWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+};
 
 type Message = {
   role: "user" | "bot";
@@ -43,6 +81,12 @@ export default function PortfolioChatbot() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voiceNotice, setVoiceNotice] = useState("");
+  const [recognitionSupported, setRecognitionSupported] = useState(false);
+  const [speechSynthesisSupported, setSpeechSynthesisSupported] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -50,6 +94,161 @@ export default function PortfolioChatbot() {
       text: "Hi 👋 I'm IYAPPAN AI. Ask me anything about IYAPPAN, his skills, projects, or experience.",
     },
   ]);
+
+  useEffect(() => {
+    const speechWindow = window as SpeechRecognitionWindow;
+    setRecognitionSupported(
+      Boolean(speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition),
+    );
+    setSpeechSynthesisSupported(
+      "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined",
+    );
+
+    return () => {
+      const recognition = recognitionRef.current;
+      if (recognition) {
+        recognition.onresult = null;
+        recognition.onerror = null;
+        recognition.onend = null;
+        try {
+          recognition.stop();
+        } catch {
+          // The browser may already have ended recognition.
+        }
+      }
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
+
+  const stopListening = () => {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (recognition) {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      try {
+        recognition.stop();
+      } catch {
+        // The browser may already have ended recognition.
+      }
+    }
+    setIsListening(false);
+  };
+
+  const stopSpeaking = () => {
+    if (speechSynthesisSupported) window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+  };
+
+  const speakText = (text: string) => {
+    if (!speechSynthesisSupported) {
+      setVoiceNotice("Voice output is not supported in this browser.");
+      return;
+    }
+
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        setVoiceNotice("The spoken response could not be played.");
+      };
+      setVoiceNotice("");
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      setIsSpeaking(false);
+      setVoiceNotice("The spoken response could not be played.");
+    }
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+
+    const speechWindow = window as SpeechRecognitionWindow;
+    const RecognitionConstructor =
+      speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+
+    if (!RecognitionConstructor) {
+      setRecognitionSupported(false);
+      setVoiceNotice("Voice input is not supported in this browser. You can still type your message.");
+      return;
+    }
+
+    let recognition: SpeechRecognitionInstance;
+    try {
+      recognition = new RecognitionConstructor();
+    } catch {
+      setVoiceNotice("Voice input could not be started. Please try again or type your message.");
+      return;
+    }
+    recognition.lang = navigator.language;
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognitionRef.current = recognition;
+    setVoiceNotice("");
+
+    recognition.onresult = (event) => {
+      const results = Array.from(event.results);
+      const transcript = results
+        .map((result) => result[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+      if (transcript) setInput(transcript);
+
+      const finalTranscript = results
+        .filter((result) => result.isFinal)
+        .map((result) => result[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+      if (finalTranscript && recognitionRef.current === recognition) {
+        recognitionRef.current = null;
+        setIsListening(false);
+        try {
+          recognition.stop();
+        } catch {
+          // Recognition may already have stopped after the final result.
+        }
+        setInput(finalTranscript);
+        setVoiceNotice("Speech recognized. Review the text and select Send when ready.");
+      }
+    };
+
+    recognition.onerror = (event) => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setVoiceNotice("Microphone access was denied. Allow microphone access or type your message.");
+      } else if (event.error !== "aborted") {
+        setVoiceNotice("Voice input could not be completed. Please try again or type your message.");
+      }
+    };
+
+    recognition.onend = () => {
+      if (recognitionRef.current === recognition) recognitionRef.current = null;
+      setIsListening(false);
+    };
+
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch {
+      recognitionRef.current = null;
+      setIsListening(false);
+      setVoiceNotice("Voice input could not be started. Please try again or type your message.");
+    }
+  };
+
+  const closeChatbot = () => {
+    stopListening();
+    stopSpeaking();
+    setOpen(false);
+  };
 
   const sendMessage = async (text: string) => {
     const message = text.trim();
@@ -64,7 +263,10 @@ export default function PortfolioChatbot() {
       const result = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message,
+          history: messages.map(({ role, text: messageText }) => ({ role, text: messageText })),
+        }),
       });
       const responseBody = await result.text();
 
@@ -83,6 +285,7 @@ export default function PortfolioChatbot() {
 
       const reply = payload.message;
       setMessages((prev) => [...prev, { role: "bot", text: reply }]);
+      speakText(reply);
     } catch (error) {
       const errorMessage =
         error instanceof Error
@@ -108,7 +311,7 @@ export default function PortfolioChatbot() {
 
             <button
               className="chatbot-close"
-              onClick={() => setOpen(false)}
+              onClick={closeChatbot}
               aria-label="Close chatbot"
             >
               ×
@@ -147,24 +350,65 @@ export default function PortfolioChatbot() {
               sendMessage(input);
             }}
           >
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything..."
-              disabled={isLoading}
-            />
+            <div className="chatbot-input-row">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask anything..."
+                aria-label="Message IYAPPAN AI"
+                disabled={isLoading}
+              />
 
-            <button type="submit" aria-label="Send message" disabled={isLoading || !input.trim()}>
-              ➤
-            </button>
+              <button
+                type="button"
+                className={`chatbot-voice-button${isListening ? " listening" : ""}`}
+                onClick={toggleListening}
+                aria-label={isListening ? "Stop listening" : "Start voice input"}
+                aria-pressed={isListening}
+                title={recognitionSupported ? "Voice input" : "Voice input unsupported"}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="3" width="6" height="12" rx="3" />
+                  <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8" />
+                </svg>
+              </button>
+
+              <button
+                type="button"
+                className={`chatbot-voice-button chatbot-speech-button${isSpeaking ? " speaking" : ""}`}
+                onClick={() => {
+                  if (isSpeaking) {
+                    stopSpeaking();
+                    return;
+                  }
+                  const latestBotMessage = [...messages].reverse().find((item) => item.role === "bot");
+                  if (latestBotMessage) speakText(latestBotMessage.text);
+                }}
+                aria-label={isSpeaking ? "Stop spoken response" : "Play latest response aloud"}
+                title={speechSynthesisSupported ? (isSpeaking ? "Stop speech" : "Play latest response") : "Speech output unsupported"}
+                disabled={!speechSynthesisSupported}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 9v6h4l5 4V5L8 9H4Z" />
+                  {isSpeaking ? <path d="M17 9v6m4-6v6" /> : <path d="M16 9a4 4 0 0 1 0 6m2.5-8.5a7.5 7.5 0 0 1 0 11" />}
+                </svg>
+              </button>
+
+              <button type="submit" aria-label="Send message" disabled={isLoading || !input.trim()}>
+                ➤
+              </button>
+            </div>
+            <div className="chatbot-voice-status" role="status" aria-live="polite">
+              {isListening ? "Listening... Speak now, or select the microphone to stop." : voiceNotice}
+            </div>
           </form>
         </div>
       )}
 
       <button
         className={`chatbot-launcher ${open ? "active" : ""}`}
-        onClick={() => setOpen((prev) => !prev)}
-        aria-label="Open IYAPPAN AI"
+        onClick={() => (open ? closeChatbot() : setOpen(true))}
+        aria-label={open ? "Close IYAPPAN AI" : "Open IYAPPAN AI"}
       >
         {open ? (
           "×"
