@@ -10,6 +10,7 @@ import { CursorGlow } from './components/CursorGlow';
 import { LoadingScreen } from './components/LoadingScreen';
 import { ParticleBackground } from './components/ParticleBackground';
 import { PortfolioContent } from './components/PortfolioContent';
+import PortfolioChatbot from './PortfolioChatbot';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -90,7 +91,9 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <>
+      <PortfolioChatbot />
+      <div className="app-shell">
       <AuroraBackground />
       <BinaryRain />
       <CodeBackground />
@@ -128,7 +131,8 @@ function App() {
         </div>
         © 2026 Iyappan N. Crafted with modern design and engineering curiosity.
       </footer>
-    </div>
+      </div>
+    </>
   );
 }
 
