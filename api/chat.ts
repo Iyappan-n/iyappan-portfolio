@@ -1,7 +1,41 @@
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const MAX_MESSAGE_LENGTH = 2000;
+const MAX_HISTORY_TURNS = 12;
+const MAX_HISTORY_MESSAGE_LENGTH = 2000;
+
+const SYSTEM_INSTRUCTION = `You are IYAPPAN's portfolio assistant. Help visitors with questions about IYAPPAN, his skills, projects, experience, and portfolio, as well as general AI and technical questions. IYAPPAN is a Computer Science and Engineering student interested in UI/UX design, frontend development, Python, cybersecurity, and product development. Use the portfolio's About, Skills, Projects, Resume, and Contact sections as references. Do not invent specific project details, employment history, achievements, or personal information that was not provided; be transparent when the portfolio does not contain an answer. Answer general technical questions helpfully and concisely.`;
+
+type ChatHistoryTurn = {
+  role: "user" | "model";
+  parts: { text: string }[];
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isHistoryTurn(value: unknown): value is { role: string; text: string } {
+  return (
+    isRecord(value) &&
+    typeof value.role === "string" &&
+    typeof value.text === "string"
+  );
+}
+
+function getSafeHistory(value: unknown): ChatHistoryTurn[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter(isHistoryTurn)
+    .filter((turn) => turn.role === "user" || turn.role === "bot" || turn.role === "model")
+    .slice(-MAX_HISTORY_TURNS)
+    .map((turn) => ({
+      role: turn.role === "user" ? "user" : "model",
+      parts: [{ text: turn.text.slice(0, MAX_HISTORY_MESSAGE_LENGTH) }],
+    }));
+}
 
 export default async function handler(
   request: VercelRequest,
@@ -16,12 +50,7 @@ export default async function handler(
     }
 
     const body: unknown = request.body;
-    if (
-      typeof body !== "object" ||
-      body === null ||
-      !("message" in body) ||
-      typeof body.message !== "string"
-    ) {
+    if (!isRecord(body) || typeof body.message !== "string") {
       return response.status(400).json({ error: "Please send a message." });
     }
 
@@ -32,22 +61,24 @@ export default async function handler(
       });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return response.status(500).json({
         error: "The chat service is not configured. Please contact the site owner.",
       });
     }
 
-    const openai = new OpenAI({ apiKey });
-    const result = await openai.responses.create({
-      model: "gpt-4.1-mini",
-      instructions:
-        "You are IYAPPAN's portfolio assistant. Answer helpfully and concisely using information about IYAPPAN's portfolio. Do not invent personal details; direct visitors to the portfolio sections when information is not available.",
-      input: message,
+    const genAI = new GoogleGenAI({ apiKey });
+    const result = await genAI.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: [
+        ...getSafeHistory(body.history),
+        { role: "user", parts: [{ text: message }] },
+      ],
+      config: { systemInstruction: SYSTEM_INSTRUCTION },
     });
 
-    const answer = result.output_text.trim();
+    const answer = result.text?.trim() ?? "";
     if (!answer) {
       return response.status(502).json({
         error: "I couldn't generate a reply just now. Please try again.",
@@ -56,49 +87,33 @@ export default async function handler(
 
     return response.status(200).json({ message: answer });
   } catch (error: unknown) {
-    if (error instanceof OpenAI.APIError) {
-      console.error("OpenAI chat request failed", {
-        name: error.name,
-        status: error.status,
-        code: error.code,
-        requestId: error.requestID,
-      });
+    const errorDetails = isRecord(error) ? error : {};
+    const status = typeof errorDetails.status === "number" ? errorDetails.status : undefined;
+    const code = typeof errorDetails.code === "string" ? errorDetails.code : undefined;
+    console.error("Gemini chat request failed", {
+      name: error instanceof Error ? error.name : "UnknownError",
+      status,
+      code,
+    });
 
-      if (error instanceof OpenAI.AuthenticationError) {
-        return response.status(502).json({
-          error: "The chat service could not authenticate with its AI provider. Please contact the site owner.",
-        });
-      }
-
-      if (error instanceof OpenAI.RateLimitError) {
-        const quotaReached = error.code === "insufficient_quota";
-        return response.status(503).json({
-          error: quotaReached
-            ? "The chat service has reached its usage limit. Please try again later."
-            : "The chat service is busy. Please try again in a moment.",
-        });
-      }
-
-      if (error instanceof OpenAI.APIConnectionError) {
-        return response.status(502).json({
-          error: "The chat service could not connect to its AI provider. Please try again shortly.",
-        });
-      }
-
-      if (error.status !== undefined && error.status >= 500) {
-        return response.status(502).json({
-          error: "The AI chat provider is temporarily unavailable. Please try again shortly.",
-        });
-      }
-
+    if (status === 401 || status === 403) {
       return response.status(502).json({
-        error: "The AI chat provider could not process this request. Please try again later.",
+        error: "The chat service could not authenticate with its AI provider. Please contact the site owner.",
       });
     }
 
-    console.error("Unexpected chatbot API error", {
-      name: error instanceof Error ? error.name : "UnknownError",
-    });
+    if (status === 429) {
+      return response.status(503).json({
+        error: "The chat service is busy or has reached its usage limit. Please try again later.",
+      });
+    }
+
+    if (status !== undefined && status >= 500) {
+      return response.status(502).json({
+        error: "The AI chat provider is temporarily unavailable. Please try again shortly.",
+      });
+    }
+
     return response.status(502).json({
       error: "The chat service encountered an unexpected error. Please try again shortly.",
     });

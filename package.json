@@ -11,9 +11,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^2.27.0",
     "framer-motion": "^12.42.2",
     "lenis": "^1.3.25",
-    "openai": "^7.28.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-icons": "^5.7.0"
