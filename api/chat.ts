@@ -35,7 +35,7 @@ export default async function handler(
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return response.status(500).json({
-        error: "Chat is temporarily unavailable. Please try again later.",
+        error: "The chat service is not configured. Please contact the site owner.",
       });
     }
 
@@ -55,9 +55,52 @@ export default async function handler(
     }
 
     return response.status(200).json({ message: answer });
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof OpenAI.APIError) {
+      console.error("OpenAI chat request failed", {
+        name: error.name,
+        status: error.status,
+        code: error.code,
+        requestId: error.requestID,
+      });
+
+      if (error instanceof OpenAI.AuthenticationError) {
+        return response.status(502).json({
+          error: "The chat service could not authenticate with its AI provider. Please contact the site owner.",
+        });
+      }
+
+      if (error instanceof OpenAI.RateLimitError) {
+        const quotaReached = error.code === "insufficient_quota";
+        return response.status(503).json({
+          error: quotaReached
+            ? "The chat service has reached its usage limit. Please try again later."
+            : "The chat service is busy. Please try again in a moment.",
+        });
+      }
+
+      if (error instanceof OpenAI.APIConnectionError) {
+        return response.status(502).json({
+          error: "The chat service could not connect to its AI provider. Please try again shortly.",
+        });
+      }
+
+      if (error.status !== undefined && error.status >= 500) {
+        return response.status(502).json({
+          error: "The AI chat provider is temporarily unavailable. Please try again shortly.",
+        });
+      }
+
+      return response.status(502).json({
+        error: "The AI chat provider could not process this request. Please try again later.",
+      });
+    }
+
+    console.error("Unexpected chatbot API error", {
+      name: error instanceof Error ? error.name : "UnknownError",
+    });
     return response.status(502).json({
-      error: "I couldn't reach the chat service just now. Please try again.",
+      error: "The chat service encountered an unexpected error. Please try again shortly.",
     });
   }
 }
