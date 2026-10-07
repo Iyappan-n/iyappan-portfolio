@@ -4,6 +4,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 const MAX_MESSAGE_LENGTH = 2000;
 const MAX_HISTORY_TURNS = 12;
 const MAX_HISTORY_MESSAGE_LENGTH = 2000;
+const MAX_GENERATION_ATTEMPTS = 3;
+const INITIAL_RETRY_DELAY_MS = 300;
 
 const SYSTEM_INSTRUCTION = `You are IYAPPAN's portfolio assistant. Help visitors with questions about IYAPPAN, his skills, projects, experience, and portfolio, as well as general AI and technical questions. IYAPPAN is a Computer Science and Engineering student interested in UI/UX design, frontend development, Python, cybersecurity, and product development. Use the portfolio's About, Skills, Projects, Resume, and Contact sections as references. Do not invent specific project details, employment history, achievements, or personal information that was not provided; be transparent when the portfolio does not contain an answer. Answer general technical questions helpfully and concisely.`;
 
@@ -35,6 +37,20 @@ function getSafeHistory(value: unknown): ChatHistoryTurn[] {
       role: turn.role === "user" ? "user" : "model",
       parts: [{ text: turn.text.slice(0, MAX_HISTORY_MESSAGE_LENGTH) }],
     }));
+}
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (!isRecord(error) || typeof error.status !== "number") return undefined;
+  return error.status;
+}
+
+function isRetryableError(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  return status === 429 || (status !== undefined && status >= 500 && status <= 599);
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 export default async function handler(
@@ -69,14 +85,42 @@ export default async function handler(
     }
 
     const genAI = new GoogleGenAI({ apiKey });
-    const result = await genAI.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: [
-        ...getSafeHistory(body.history),
-        { role: "user", parts: [{ text: message }] },
-      ],
-      config: { systemInstruction: SYSTEM_INSTRUCTION },
-    });
+    let result;
+    for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt += 1) {
+      try {
+        result = await genAI.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: [
+            ...getSafeHistory(body.history),
+            { role: "user", parts: [{ text: message }] },
+          ],
+          config: { systemInstruction: SYSTEM_INSTRUCTION },
+        });
+        break;
+      } catch (error: unknown) {
+        const status = getErrorStatus(error);
+        const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
+        console.error("Gemini chat attempt failed", {
+          attempt,
+          status,
+          code,
+          name: error instanceof Error ? error.name : "UnknownError",
+        });
+
+        if (!isRetryableError(error) || attempt === MAX_GENERATION_ATTEMPTS) {
+          throw error;
+        }
+
+        const delay = INITIAL_RETRY_DELAY_MS * 2 ** (attempt - 1);
+        await wait(delay);
+      }
+    }
+
+    if (!result) {
+      return response.status(503).json({
+        error: "The AI chat provider is temporarily unavailable. Please try again shortly.",
+      });
+    }
 
     const answer = result.text?.trim() ?? "";
     if (!answer) {
