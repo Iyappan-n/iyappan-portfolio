@@ -166,7 +166,14 @@ export default function PortfolioChatbot() {
         onClick={() => setOpen((prev) => !prev)}
         aria-label="Open IYAPPAN AI"
       >
-        {open ? "×" : <img src="/iyappan-ai-bot-logo.png" alt="IYAPPAN AI" className="chatbot-logo" />}
+        {open ? (
+          "×"
+        ) : (
+          <>
+            <img src="/iyappan-ai-bot-logo.png" alt="IYAPPAN AI" className="chatbot-logo" />
+            <span className="chatbot-launcher-label">CHATBOT</span>
+          </>
+        )}
       </button>
     </>
   );
