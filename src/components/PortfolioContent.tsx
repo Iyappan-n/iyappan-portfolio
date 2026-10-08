@@ -9,6 +9,7 @@ import {
   FaEnvelope,
   FaGithub,
   FaGraduationCap,
+  FaInstagram,
   FaLaptopCode,
   FaLightbulb,
   FaLinkedin,
@@ -284,31 +285,42 @@ export function PortfolioContent({ displayText }: { displayText: string }) {
                 <span>Email:</span>
                 iyappan3170@gmail.com
               </a>
-              <div className="contact-item">
+              <a className="contact-item" href="tel:+916384918900" aria-label="Phone 1">
                 <FaPhone />
-                <span>Phone:</span>
-                +91 6384918900, 8072568913
-              </div>
+                <span>Phone 1:</span>
+                +91 6384918900
+              </a>
+              <a className="contact-item" href="tel:+918072568913" aria-label="Phone 2">
+                <FaPhone />
+                <span>Phone 2:</span>
+                +91 8072568913
+              </a>
               <div className="contact-item">
                 <FaMapMarkerAlt />
                 <span>Location:</span>
                 Chennai, Tamil Nadu, India
               </div>
-              <a className="contact-item" href="https://github.com/Iyappan1703" target="_blank" rel="noreferrer" aria-label="GitHub">
+              <a className="contact-item" href="https://github.com/iyappan-n" target="_blank" rel="noreferrer" aria-label="GitHub">
                 <FaGithub />
                 <span>GitHub:</span>
-                https://github.com/Iyappan1703
+                https://github.com/iyappan-n
               </a>
-              <a className="contact-item" href="https://linkedin.com/in/iyappan-n-a720b2315" target="_blank" rel="noreferrer" aria-label="LinkedIn">
+              <a className="contact-item" href="https://linkedin.com/in/iyappan-n" target="_blank" rel="noreferrer" aria-label="LinkedIn">
                 <FaLinkedin />
                 <span>LinkedIn:</span>
-                linkedin.com/in/iyappan-n-a720b2315
+                linkedin.com/in/iyappan-n
+              </a>
+              <a className="contact-item" href="https://instagram.com/iyappan__1703" target="_blank" rel="noreferrer" aria-label="Instagram">
+                <FaInstagram />
+                <span>Instagram:</span>
+                instagram.com/iyappan__1703
               </a>
             </div>
           </div>
           <div className="socials">
-            <a href="https://github.com/Iyappan1703" target="_blank" rel="noopener noreferrer" aria-label="GitHub"><FaGithub /></a>
-            <a href="https://linkedin.com/in/iyappan-n-a720b2315" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn"><FaLinkedin /></a>
+            <a href="https://github.com/iyappan-n" target="_blank" rel="noopener noreferrer" aria-label="GitHub"><FaGithub /></a>
+            <a href="https://linkedin.com/in/iyappan-n" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn"><FaLinkedin /></a>
+            <a href="https://instagram.com/iyappan__1703" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><FaInstagram /></a>
             <a href="mailto:iyappan3170@gmail.com" aria-label="Email"><FaEnvelope /></a>
           </div>
         </div>

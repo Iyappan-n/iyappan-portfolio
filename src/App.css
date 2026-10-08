@@ -830,8 +830,11 @@ a {
 .contact-item {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
   gap: 12px;
   color: #d8e0ff;
+  overflow-wrap: anywhere;
 }
 
 .contact-item span {
